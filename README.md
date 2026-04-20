@@ -4,9 +4,9 @@ Drift Happens is a customer segmentation console for exploring how segment membe
 
 ## What This Task Is About
 
-The task is to build a small but realistic segmentation platform that can define static and dynamic customer segments, evaluate segment rules against customer data, track exactly who entered or left a segment, simulate data drift such as new purchases or inactivity, show those changes in a UI in near real time.
+Drift Happens is a small but realistic segmentation platform that can define static and dynamic customer segments, evaluate segment rules against customer data, track who entered or left a segment, simulate data drift such as new purchases or inactivity and show every change in frontend in real time.
 
-The interesting part is not only computing a segment once, but handling the operational side of "segment drift": buffering frequent customer updates, reevaluating impacted segments, cascading changes across dependent segments, and exposing the results to both downstream consumers and the UI.
+The interesting part of this task was not only computing a segment once, but handling the operational side of the "segment drift", buffering frequent customer updates, reevaluating changed segments, cascading changes across dependent segments, and visualizing the results in the UI.
 
 ## Repository Layout
 
@@ -260,67 +260,36 @@ Why this matters:
 
 #### 1. MongoDB + Elasticsearch instead of MongoDB alone
 
-Chosen because:
-
-- the rule language maps naturally to Elasticsearch query DSL,
-- large membership searches are cleaner to express in search queries,
-- exact member ID lists can be retrieved and diffed efficiently.
-
-Alternatives considered:
-
-- Mongo-only evaluation using query builders and aggregation.
-
-Why I did not prefer it:
-
-- segment rules like nested boolean logic, date windows, wildcard matching, and segment inclusion become harder to optimize and reason about as the rule set grows.
+- the rule language maps naturally to Elasticsearch query DSL
+- large membership searches are cleaner to express in search queries
+- exact member id lists can be retrieved and diffed efficiently
 
 #### 2. Asynchronous fan-out through RabbitMQ instead of direct service calls
 
-Chosen because:
-
-- one segment delta needs to feed multiple consumers with different responsibilities,
-- campaign processing, UI notifications, and cascades should not block the write path,
-- retry boundaries are clearer.
-
-Alternative considered:
-
-- synchronous in-process method calls after each evaluation.
-
-Why I did not prefer it:
-
-- tighter coupling, harder recovery, and weaker separation between core evaluation and side effects.
+- one segment delta needs to feed multiple consumers with different responsibilities
+- campaign processing, UI notifications, and cascades should not block the write path
+- retry boundaries are clearer
 
 #### 3. Redis buffering instead of reevaluating immediately on every customer change
 
-Chosen because:
-
-- customer updates can arrive in bursts,
-- multiple writes to the same customer within a short window should collapse into one reevaluation wave,
-- Redis sets are a simple fit for deduplicating changed customer IDs.
-
-Alternative considered:
-
-- immediate reevaluation for every mutation.
-
-Why I did not prefer it:
-
-- it would do repeated work and create unnecessary churn in the segment/event pipeline.
+- customer updates can arrive in bursts
+- multiple writes to the same customer within a short window should collapse into one reevaluation wave
+- Redis sets are a simple fit for deduplicating changed customer id
 
 #### 4. Static and dynamic segments both persisted in MongoDB
 
-Chosen because:
-
 - the UI and APIs can treat segments uniformly,
 - static segments still benefit from rules as reproducible definitions,
-- refresh behavior is explicit.
 
-Trade-off:
+#### 5. Nuxt 3 as a frontend framework
 
-- static segments must be refreshed manually, which is the point, but it also means snapshots can become intentionally stale.
+- Nuxt supports SSR(Server Side Rendering) that helps improve loading speeds and SEO 
+- The segment dashboard needs SSR for the initial page load
+- I am more familiar with Nuxt framework in frontend so building and debugging was less time consuming
 
 ## API and Feature Summary
 
-Backend endpoints include:
+Backend endpoints:
 
 - `GET /segments`, `POST /segments`, `PATCH /segments/:id`
 - `GET /segments/:id/members`
@@ -333,43 +302,11 @@ Backend endpoints include:
 - `POST /simulate/bulk-import`
 - `GET /campaigns/log`
 
-Frontend capabilities include:
+Frontend:
 
 - live segment overview,
 - per-segment member and delta inspection,
 - drift simulation panel,
 - real-time campaign activity stream.
 
-## Testing
 
-The backend already includes focused automated coverage for core logic:
-
-- unit tests for rule translation, dependency handling, evaluator behavior, gateway behavior, buffering, and event consumers,
-- e2e coverage for exact delta reporting on a segment refresh with more than 10,000 members.
-
-Useful commands:
-
-```powershell
-Set-Location .\drift-happens-backend
-npm test
-npm run test:e2e
-```
-
-## Notes and Future Improvements
-
-A few things I would improve next if this were being pushed toward production:
-
-- reevaluate only impacted dynamic segments instead of all dynamic segments on every flush,
-- move seeding into a first-class bootstrap workflow or a dedicated one-shot container,
-- add observability around indexing lag, queue lag, cascade depth, and evaluation duration,
-- add contract tests around websocket payloads and campaign log generation,
-- expose metrics for member count churn, reevaluation frequency, and queue throughput.
-
-## Extra Deliverables Already Present In The Codebase
-
-- simulation endpoints to create realistic data drift scenarios,
-- real-time websocket updates for both segment deltas and campaign activity,
-- audit/event history for segment reevaluations,
-- campaign log persistence,
-- dependency-aware cascading segment reevaluation,
-- Docker-based local environment for all required infrastructure.
