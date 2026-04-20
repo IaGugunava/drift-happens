@@ -116,27 +116,74 @@ The customer seed mix is intentionally shaped so the segment interactions are ea
 
 ## Architecture
 
-### High-Level View
+### Component Communication and Signal Flow
 
 ```mermaid
 flowchart LR
-    UI[Nuxt UI<br/>segments / simulation / campaigns]
-    API[NestJS API]
-    Mongo[(MongoDB<br/>customers, segments, events, campaign logs)]
-    ES[(Elasticsearch<br/>segment rule evaluation)]
-    Redis[(Redis<br/>change buffer + dependency cache)]
-    MQ[(RabbitMQ<br/>segment event fan-out)]
-    WS[WebSocket gateway]
+    %% -------------------- INGESTION --------------------
+    subgraph INGESTION
+        DC[Data Change<br/>create update delete simulation]
+        API[Customers API]
+        MDB[(MongoDB<br/>source of truth)]
+        ES[(Elasticsearch<br/>search index)]
+    end
 
-    UI -->|HTTP| API
-    UI -->|Socket.IO| WS
-    WS --> UI
+    %% -------------------- BUFFERING --------------------
+    subgraph BUFFERING
+        BUF[(Redis Change Buffer<br/>dedupe customer IDs)]
+        CRON[Debounce Scheduler<br/>flush every 5s]
+    end
 
-    API --> Mongo
+    %% -------------------- PROCESSING --------------------
+    subgraph PROCESSING
+        SE[Segment Evaluator]
+        RT[Rule Translator]
+        DELTA[Delta Calculator<br/>added removed total]
+        SEGDB[(MongoDB<br/>segments + events)]
+    end
+
+    %% -------------------- DISTRIBUTION --------------------
+    subgraph DISTRIBUTION
+        MQ[(RabbitMQ Exchange)]
+        WS[UI Push Consumer]
+        UI[WebSocket / UI]
+        CAMP[Campaign Consumer]
+        CAMPDB[(MongoDB<br/>campaign log)]
+    end
+
+    %% -------------------- CASCADE --------------------
+    subgraph CASCADE
+        DEP[(Redis Dependency Cache)]
+        CAS[Cascade Consumer]
+        DSEG[Dependent Segments]
+    end
+
+    %% -------------------- FLOWS --------------------
+
+    DC --> API
+    API --> MDB
     API --> ES
-    API --> Redis
-    API --> MQ
-    MQ --> API
+    API --> BUF
+
+    BUF -->|batch + dedupe| CRON
+    CRON --> SE
+
+    SE --> RT
+    RT --> ES
+    ES --> SE
+
+    SE --> DELTA
+    DELTA --> SEGDB
+    DELTA --> MQ
+
+    MQ --> WS --> UI
+    MQ --> CAMP --> CAMPDB
+
+    SE --> DEP
+    MQ --> CAS
+    DEP --> CAS
+    CAS --> DSEG
+    DSEG --> SE
 ```
 
 Why this shape:
