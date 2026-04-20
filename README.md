@@ -223,17 +223,11 @@ sequenceDiagram
     MQ->>Cascade: reevaluate dependent segments
 ```
 
-Why this approach:
+Why I chose this approach:
 
 - It absorbs bursts of customer changes instead of reevaluating every dynamic segment on every single write.
 - It preserves an exact delta of `added` and `removed` members for auditability and downstream actions.
 - It keeps the UI reactive without coupling browser updates directly to write requests.
-
-Trade-offs:
-
-- The system is eventually consistent rather than instantly consistent because dynamic segments are flushed on a schedule.
-- The infrastructure footprint is larger than a single-database solution.
-- Dual persistence between MongoDB and Elasticsearch means indexing lag must be handled carefully.
 
 ### Segment Dependency Model
 
